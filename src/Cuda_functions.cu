@@ -2564,12 +2564,7 @@ extern "C" void device_compute_update_(int* Iter, int* SSP, double* DT, double* 
   double v_max = *vm;
   double* modes;
   double ch;
-#if defined(SRC) && defined(PLANET)
-  double delta_r = 0.1;
-  double cutoff = 0.5-0.5*delta_r;
-  double eps = 0.1;
-#endif
-
+  
   switch (iter){
   case 0:
     modes = du;
@@ -2618,22 +2613,6 @@ extern "C" void device_compute_update_(int* Iter, int* SSP, double* DT, double* 
   flux_line_integral<<<(tsize+BLOCK-1)/BLOCK,BLOCK>>>(edge,F,G,m,ny,nx,nvar);
 
   compute_dudt<<<(tsize+BLOCK-1)/BLOCK,BLOCK>>>(dudt,flux_v,edge,src_vol,invdx,invdy,nx*ny*m*m*nvar);
-
-  // add hyperbolic cleaning
-  //#ifdef CORR2
-   //v_max = device_compute_max_v()*7.0;
-   //ch = v_max*5.;
-   //timesC<<<(usize+BLOCK-1)/BLOCK,BLOCK>>>(&dudt[usize*3],&dudt[usize*3],ch*ch,usize);
-   //cudaDeviceSynchronize();
-   //compute_psi_correction(dudt,modes,dt,v_max);
-   //cudaDeviceSynchronize();
-
-   //printf("ch: %.14f \n", ch);
-   //timesC<<<(usize+BLOCK-1)/BLOCK,BLOCK>>>(&dudt[usize*3],&dudt[usize*3],ch*ch,usize);
-   //cudaDeviceSynchronize();
-   //compute_psi_correction(dudt,modes,dt,v_max);
-   //cudaDeviceSynchronize();
-  //#endif
 
   if (RK==4){
     switch (iter){
@@ -2976,7 +2955,7 @@ inline void __checkCudaErrors(T result, char const *const func, const char *cons
 #define CCE(val) __checkCudaErrors( (val), #val, __FILE__, __LINE__ )
 
 
-extern "C" void gpu_allocation_ (int *Nvar, int* Nx, int* Ny, int* M, int* K, double *Bl_x, double *Bl_y, double *CFL, double *Eta, int* Bc, int* nequilibrium, double *Gamma) {
+extern "C" void gpu_allocation_ (int *Nvar, int* Nx, int* Ny, int* M, int* K, double *Bl_x, double *Bl_y, double *CFL, double *Eta, int* Bc, double *Gamma) {
   size_t free;
   size_t total;
   nvar = *Nvar;
@@ -2985,7 +2964,6 @@ extern "C" void gpu_allocation_ (int *Nvar, int* Nx, int* Ny, int* M, int* K, do
   m = *M;
   k = *K;
   bc = *Bc;
-  neql = *nequilibrium;
   usize = m*m*nx*ny;
   tsize = usize*nvar;
   boxlen_x = *Bl_x;
@@ -3003,7 +2981,6 @@ extern "C" void gpu_allocation_ (int *Nvar, int* Nx, int* Ny, int* M, int* K, do
   //cudaError_t memerror = cudaMemGetInfo(&free,&total);
   //error = cudaGetLastError();
   cudaMalloc ( &u, tsize * sizeof(double));
-  cudaMalloc ( &u_eq, tsize * sizeof(double));
   cudaMalloc ( &u_d_q, tsize * sizeof(double));
   cudaMalloc ( &du, tsize * sizeof(double));
   cudaMalloc ( &w, tsize * sizeof(double));
@@ -3012,7 +2989,6 @@ extern "C" void gpu_allocation_ (int *Nvar, int* Nx, int* Ny, int* M, int* K, do
   cudaMalloc ( &w3, tsize * sizeof(double));
   cudaMalloc ( &w4, tsize * sizeof(double));
   cudaMalloc ( &dudt, tsize * sizeof(double));
-  cudaMalloc ( &ufaces_eq, 4*nvar*nx*ny*m*sizeof(double));
 
   cudaMalloc ( &b_modes, bsize*nx*ny * sizeof(double));
   cudaMalloc ( &b_modes1, bsize*m*nx*ny * sizeof(double));
@@ -3041,23 +3017,6 @@ extern "C" void gpu_allocation_ (int *Nvar, int* Nx, int* Ny, int* M, int* K, do
     exit(-1);
   }*/
 
-
-
-#if defined(SRC) || defined(LASRC)
-  cudaMalloc ( &src, tsize * sizeof(double));
-  cudaMalloc ( &src_vol, tsize * sizeof(double));
-  cudaMalloc ( &grad, usize * 2 * sizeof(double));
-#endif
-#ifdef LASRC
-  grad_phi_const<<<(usize+BLOCK-1)/BLOCK,BLOCK>>>(grad,usize);
-#endif
-
-#ifdef WB
-  cudaMalloc ( &modes_eq, tsize * sizeof(double));
-  cudaMalloc ( &edge_eq, tsize*2 * sizeof(double));
-  cudaMalloc ( &ufaces_pert, 4*nvar*nx*ny*m*sizeof(double));
-  cudaMalloc ( &w_eq, tsize * sizeof(double));
-#endif
   cudaMalloc ( &x, nx*ny*m*m * sizeof(double));
   cudaMalloc ( &y, nx*ny*m*m * sizeof(double));
   cudaMalloc ( &uX, nvar*ny*nx*k*m*sizeof(double));
@@ -3077,7 +3036,7 @@ extern "C" void gpu_allocation_ (int *Nvar, int* Nx, int* Ny, int* M, int* K, do
   printf("GPU allocation done\n");
 }
 
-extern "C" void gpu_set_pointers_ (double** u_d, double** du_d, double** dudt_d, double** w_d, double** u_eq_d,
+extern "C" void gpu_set_pointers_ (double** u_d, double** du_d, double** dudt_d, double** w_d,
 			       double** x_d, double** y_d , double** xc_d, double** yc_d, double* x_quad, double* y_quad, double* w_x_quad,
 				   double* w_y_quad, double* x_gll, double* y_gll, double* w_x_gll,
 				   double* w_y_gll, double* Sqrt_mod) {
@@ -3086,7 +3045,6 @@ extern "C" void gpu_set_pointers_ (double** u_d, double** du_d, double** dudt_d,
   *du_d =du;
   *dudt_d =dudt;
   *w_d = w;
-  *u_eq_d = u_eq;
   *x_d = x;
   *y_d = y;
   *xc_d = xc;

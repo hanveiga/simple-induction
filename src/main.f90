@@ -4,7 +4,7 @@ program main
   real(kind=8),dimension(:,:,:,:,:),allocatable::u,w,u_p
 
   !device pointers
-  type (c_ptr) :: u_d, du_d,dudt_d, w_d, u_eq_d, db_d
+  type (c_ptr) :: u_d, du_d,dudt_d, w_d, db_d
   type (c_ptr) :: x_d, y_d
   type (c_ptr) :: yc_d, xc_d
 
@@ -12,9 +12,8 @@ program main
 
   allocate(u(nx,ny,m,m,nvar),w(nx,ny,m,m,nvar),u_p(nx,ny,m,m,nvar))
   allocate(currentsol(nx,ny,m,m,nvar))
-  allocate(x(nx,ny,m,m),y(nx,ny,m,m),xc(nx,ny),yc(nx,ny),w_eq(nx,ny,m,m,nvar),u_eq(nx,ny,m,m,nvar))
+  allocate(x(nx,ny,m,m),y(nx,ny,m,m),xc(nx,ny),yc(nx,ny))
   allocate(x_quad(m),w_x_quad(m),y_quad(m),w_y_quad(m),x_gll(k),w_x_gll(k),y_gll(k),w_y_gll(k), sqrt_mod(m),sqrts_div(m))
-
 
   ! Initialization of fields
   call initialisation(u,w)
@@ -22,8 +21,8 @@ program main
   !device allocation and memory copies
   call devices()
   call setdevice(dev)
-  call gpu_allocation(nvar,nx,ny,m,k,boxlen_x,boxlen_y,cfl,eta,bc,nequilibrium,gamma)
-  call gpu_set_pointers(u_d,du_d,dudt_d,w_d,u_eq_d,x_d,y_d, xc_d, yc_d &
+  call gpu_allocation(nvar,nx,ny,m,k,boxlen_x,boxlen_y,cfl,eta,bc,gamma)
+  call gpu_set_pointers(u_d,du_d,dudt_d,w_d,x_d,y_d, xc_d, yc_d &
             & ,x_quad,y_quad,w_x_quad,w_y_quad,x_gll,y_gll,w_x_gll,w_y_gll,sqrt_mod)
 
   call gpu_set_more_pointers(sqrts_div, db_d)
@@ -40,18 +39,18 @@ program main
   call writedesc()
 
   if (ldf) then
-    call evolve_ldf(u, u_d, du_d, db_d, dudt_d, u_eq_d, w_d)
+    call evolve_ldf(u, u_d, du_d, db_d, dudt_d, w_d)
   else
-    call evolve(u, u_d, du_d, dudt_d, u_eq_d, w_d)
+    call evolve(u, u_d, du_d, dudt_d, w_d)
   end if
 
 end program main
 
-subroutine evolve_ldf(u,u_d,du_d,db_d,dudt_d,u_eq_d,w_d)
+subroutine evolve_ldf(u,u_d,du_d,db_d,dudt_d,w_d)
   USE ISO_C_BINDING
   use parameters_dg_2d
   implicit none
-  type (c_ptr) :: u_d, du_d, dudt_d, u_eq_d, w_d, db_d
+  type (c_ptr) :: u_d, du_d, dudt_d, w_d, db_d
   ! internal variables
   real(kind=8)::t,dt,top,start,finish,time
   real(kind=8)::cmax, dx, dy, cs_max,v_xmax,v_ymax
@@ -126,12 +125,12 @@ subroutine evolve_ldf(u,u_d,du_d,db_d,dudt_d,u_eq_d,w_d)
 
 end subroutine evolve_ldf
 
-subroutine evolve(u,u_d,du_d,dudt_d,u_eq_d,w_d)
+subroutine evolve(u,u_d,du_d,dudt_d,w_d)
   ! eat real nodal values, spit out nodal values
   USE ISO_C_BINDING
   use parameters_dg_2d
   implicit none
-  type (c_ptr) :: u_d, du_d, dudt_d, u_eq_d, w_d
+  type (c_ptr) :: u_d, du_d, dudt_d, w_d
   ! internal variables
   real(kind=8)::t,dt,top,start,finish,time
   real(kind=8)::cmax, dx, dy, cs_max,v_xmax,v_ymax
