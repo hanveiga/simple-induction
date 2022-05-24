@@ -12,7 +12,7 @@ module parameters_dg_2d
   logical,parameter::use_limiter=.false.
   logical,parameter::wb=.false.
   logical,parameter::ldf=.false.
-  logical,parameter::corr=.true.
+  logical,parameter::corr=.false.
   logical,parameter::make_movie=.true.
 
   character(LEN=3),parameter::solver='RK4' !or EQL to use the equilibrium solution ^^

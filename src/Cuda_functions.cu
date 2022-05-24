@@ -13,7 +13,7 @@
 //#define HLLD
 //#define PP //Activate Positivity preserving limiter
 #define NR 10 //number of Newton-Raphson iterations on the Positivity preserving limiter
-#define CORR
+//#define CORR
 
 __constant__ double sqrt_mod[5];
 __constant__ double sqrts_div[5];
@@ -1518,6 +1518,71 @@ __global__ void compute_upwind(double* u, double* w, double* f, double* FG,
 
 	  FG[id+size*var]=0.5*(f[pid+d*var]+f[mid+d*var])-0.5*cmax*(u[pid+d*var]-u[mid+d*var]);
     //FG[id+size*var]=f[mid+d*var];
+
+    }
+  }
+}
+
+__global__ void compute_true_upwind(double* u, double* w, double* f, double* FG,
+			   double gamma, int m, int ny, int nx, int nvar, int dim, int bc, int size){
+  int id, cid, var, cell, face, quad, mc, pc, pid, mid, fsize;
+  double speed_m, speed_p, cmax;
+  double bnormp, bnormm, c2p, c2m, d2p, d2m;
+  id = blockDim.x * blockIdx.x + threadIdx.x;
+  int a = nx+1-dim;
+  int b = (ny+dim)*a;
+  int c = m*b;
+  int d;
+  quad = id/b;
+  if(dim == 0){
+    face = id-quad*b;
+    cell = face/a;
+    face -= cell*a;
+    cid = cell*nx + quad*nx*ny;
+    fsize = nx;
+    a = 1;
+  }
+  else if(dim == 1){
+    cell = id-quad*b;
+    face = cell/a;
+    cell -= face*a;
+    cid = cell + quad*nx*ny;
+    fsize = ny;
+    a = nx;
+  }
+  b=m*nx*ny*(2*dim);
+  c=m*nx*ny*(2*dim+1);
+  d=4*m*nx*ny;
+  if(id < size){
+    mc = BC(face-1,fsize,bc);
+    pc = BC(face,fsize,bc);
+    mid = cid+mc*a+c;
+    pid = cid+pc*a+b;
+
+    bnormp = w[pid]*w[pid] + w[pid+d]*w[pid+d];//+w[pid+d*2]*w[pid+d*2];
+    bnormm = w[mid]*w[mid] + w[mid+d]*w[mid+d];//+w[mid+d*2]*w[mid+d*2];
+    c2p = gamma;
+    c2m = gamma;
+    d2p = 0.5*(bnormp + c2p);
+    d2m = 0.5*(bnormm + c2m);
+
+    speed_p = fabs(1.0);// + sqrt(d2p + sqrt(d2p*d2p-c2p)); //sqrt(gamma*max(w[pid+d*3],P0)/max(w[pid],RHO0)));
+    speed_m = fabs(1.0);// + sqrt(d2m + sqrt(d2m*d2m-c2m));//sqrt(gamma*max(w[mid+d*3],P0)/max(w[mid],RHO0)));
+
+    cmax=max(speed_m,speed_p);
+
+    for(var = 0; var < nvar; var++){
+
+      // if in Bx --
+      if (var == 0){
+      FG[id+size*var]=0.5*(f[pid+d*var]+f[mid+d*var]);
+      FG[id+size*var]=0.5*(f[pid+d*var]+f[mid+d*var])-0.5*cmax*(u[pid+d*var]-u[mid+d*var]);
+      }
+      // if in By
+      if (var == 1){
+      FG[id+size*var]=0.5*(f[pid+d*var]+f[mid+d*var])-0.5*cmax*(u[pid+d*var]-u[mid+d*var]);
+      FG[id+size*var]=0.5*(f[pid+d*var]+f[mid+d*var]);
+      }
 
     }
   }
