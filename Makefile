@@ -2,7 +2,7 @@ CF=gfortran
 CCUDA=nvcc
 FFLAGS=-lgfortran
 #CUDAFLAGS=-lstdc++ -L/usr/local/cuda-7.0/lib64/ -lcuda -lcudart
-CUDAFLAGS=-lstdc++ -L/sw/arcts/centos7/cuda/9.2.148/lib64 -lcudart
+CUDAFLAGS=-lstdc++ -L/sw/arcts/centos7/cuda/11.0.2/lib64 -lcudart
 
 FOBJS=bin/parameters_dg_2d.o bin/legendre.o bin/limiters.o bin/InitCond.o bin/NodesModes.o bin/Outputs.o bin/source.o bin/Speeds.o bin/update.o bin/fluxes.o bin/utils.o bin/divergence.o
 CUDAOBJS=bin/Cuda_functions.o
