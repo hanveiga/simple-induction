@@ -1574,20 +1574,20 @@ __global__ void compute_true_upwind(double* u, double* w, double* f, double* FG,
     for(var = 0; var < nvar; var++){
 
       // if in Bx --
-      if (var == 0)&&(dim==0){
+      if ((var == 0)&&(dim==0)){
         FG[id+size*var]=0.5*(f[pid+d*var]+f[mid+d*var]);
         //FG[id+size*var]=0.5*(f[pid+d*var]+f[mid+d*var])-0.5*cmax*(u[pid+d*var]-u[mid+d*var]);
       }
-      if (var == 0)&&(dim==1){
+      if ((var == 0)&&(dim==1)){
         //FG[id+size*var]=0.5*(f[pid+d*var]+f[mid+d*var]);
         FG[id+size*var]=0.5*(f[pid+d*var]+f[mid+d*var])-0.5*cmax*(u[pid+d*var]-u[mid+d*var]);
       }
       // if in By
-      if (var == 1)&&(dim==0){
+      if ((var == 1)&&(dim==0)){
         FG[id+size*var]=0.5*(f[pid+d*var]+f[mid+d*var])-0.5*cmax*(u[pid+d*var]-u[mid+d*var]);
         //FG[id+size*var]=0.5*(f[pid+d*var]+f[mid+d*var]);
       }
-      if (var == 1)&&(dim==1){
+      if ((var == 1)&&(dim==1)){
         //FG[id+size*var]=0.5*(f[pid+d*var]+f[mid+d*var])-0.5*cmax*(u[pid+d*var]-u[mid+d*var]);
         FG[id+size*var]=0.5*(f[pid+d*var]+f[mid+d*var]);
       }
