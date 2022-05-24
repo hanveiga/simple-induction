@@ -1580,11 +1580,11 @@ __global__ void compute_true_upwind(double* u, double* w, double* f, double* FG,
       }
       if ((var == 0)&&(dim==1)){
         //FG[id+size*var]=0.5*(f[pid+d*var]+f[mid+d*var]);
-        FG[id+size*var]=0.5*(f[pid+d*var]+f[mid+d*var]);
+        FG[id+size*var]=f[mid+d*var];
       }
       // if in By
       if ((var == 1)&&(dim==0)){
-        FG[id+size*var]=0.5*(f[pid+d*var]+f[mid+d*var]);
+        FG[id+size*var]=f[mid+d*var];
         //FG[id+size*var]=0.5*(f[pid+d*var]+f[mid+d*var]);
       }
       if ((var == 1)&&(dim==1)){
