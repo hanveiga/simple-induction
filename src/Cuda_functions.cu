@@ -2602,8 +2602,8 @@ extern "C" void device_compute_update_(int* Iter, int* SSP, double* DT, double* 
 
 #ifdef UPWIND
   compute_flux<<<(4*nx*ny*m+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f1,flux_f2,4*nx*ny*m);
-  compute_upwind<<<(m*ny*(nx+1)+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f1,F,gmma,m,ny,nx,nvar,0,bc,m*ny*(nx+1));
-  compute_upwind<<<(m*(ny+1)*nx+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f2,G,gmma,m,ny,nx,nvar,1,bc,m*(ny+1)*nx);
+  compute_true_upwind<<<(m*ny*(nx+1)+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f1,F,gmma,m,ny,nx,nvar,0,bc,m*ny*(nx+1));
+  compute_true_upwind<<<(m*(ny+1)*nx+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f2,G,gmma,m,ny,nx,nvar,1,bc,m*(ny+1)*nx);
 #else
   #ifndef HLLD
     compute_flux<<<(4*nx*ny*m+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f1,flux_f2,4*nx*ny*m);
