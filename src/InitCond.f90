@@ -1,4 +1,4 @@
-!---------
+
 subroutine get_coords(offset_x,offset_y)
   use parameters_dg_2d
   implicit none
@@ -93,8 +93,8 @@ subroutine initialisation(u,w)
                 r = sqrt((x(icell,jcell,inti,intj)-0.5*boxlen_x)**2 + (y(icell,jcell,inti,intj)-0.5*boxlen_y)**2 )
 
                 !if (rc<R_0) then
-                w(icell,jcell,inti,intj,1)  =  2.0*50.*(y(icell,jcell,inti,intj)-0.5*boxlen_y)*exp(-50.*r**2)  !-A_0*(yb(inti,intj,icell,jcell)-0.5*boxlen_y)/(r+0.0001)
-                w(icell,jcell,inti,intj,2)  = -2.0*50.*(x(icell,jcell,inti,intj)-0.5*boxlen_x)*exp(-50.*r**2)! A_0*(xb(inti,intj,icell,jcell)-0.5*boxlen_x)/(r+0.0001)
+                w(icell,jcell,inti,intj,1)  =  2.0*50.*(y(icell,jcell,inti,intj)-0.5*boxlen_y)*exp(-50.*r**2)**2.  !-A_0*(yb(inti,intj,icell,jcell)-0.5*boxlen_y)/(r+0.0001)
+                w(icell,jcell,inti,intj,2)  = -2.0*50.*(x(icell,jcell,inti,intj)-0.5*boxlen_x)*exp(-50.*r**2)**2.! A_0*(xb(inti,intj,icell,jcell)-0.5*boxlen_x)/(r+0.0001)
                 !else
                 !  w(icell,jcell,inti,intj,1)  = 0.0
                 !  w(icell,jcell,inti,intj,2)  = 0.0
@@ -111,7 +111,7 @@ subroutine initialisation(u,w)
       boxlen_x = 1.0
       boxlen_y = 1.0
       gamma = 0.0
-      tend = 2.0
+      tend = 0.01
     end if
 
     call get_coords(0.0,0.0)
@@ -176,3 +176,5 @@ end select
 call compute_conservative(w,u,nx,ny,m)
 
 end subroutine initialisation
+
+

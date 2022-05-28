@@ -297,3 +297,69 @@ subroutine give_bc(icell,jcell,im,ip,ib,it)
   end if
 
 end subroutine
+
+subroutine measure_divergence_wasilij(total_divB)
+  use parameters_dg_2d
+  implicit none
+
+  integer::icell,jcell, inti, intj, ni,nj
+  integer::im,ip,it,ib
+  real(kind=8)::total_divB, divergence_accum
+  real(kind=8)::div_vol, div_surf, dx, dy, divx, divy, legendre_prime, legendre
+  real(kind=8)::plus, minus, val
+  real(kind=8)::basis_deriv, basis
+  real(kind=8),dimension(4)::fc
+
+  div_surf = 0.0
+  div_vol = 0.0
+  divx = 0.0
+  divy = 0.0
+
+  dx = 1.0/nx
+  dy = 1.0/ny
+  plus = 1.0
+  minus = -1.0
+  total_divB = 0
+  fc = 0
+  divergence_accum = 0
+  ! volume part
+  do icell = 1,nx
+    do jcell = 1,ny
+
+      im = icell-1
+      ip = icell+1
+      ib = jcell-1
+      it = jcell+1
+
+      if (icell == 1) then
+          im = nx
+      end if
+
+      if (icell == nx) then
+          ip = 1
+      end if
+
+      if (jcell == ny) then
+          it = 1
+      end if
+
+      if (jcell == 1) then
+          ib = ny
+      end if
+
+      divergence_accum = divergence_accum +  abs( &
+               (currentsol(ip,it,1,1,1) - currentsol(icell,it,1,1,1) + currentsol(ip,jcell,1,1,1)&
+                - currentsol(icell,jcell,1,1,1))  &
+               +(  currentsol(ip,it,1,1,2) - currentsol(ip,jcell,1,1,2) &
+                  + currentsol(icell,it,1,1,2) - currentsol(icell,jcell,1,1,2)) &
+              -1/sqrt(dble(3))*(currentsol(ip,it,2,1,2) &
+               - currentsol(ip,jcell,2,1,2) - currentsol(icell,it,2,1,2) + currentsol(icell,jcell,2,1,2)) &
+              -1/sqrt(dble(3))*(currentsol(ip,it,1,2,1) &
+               - currentsol(ip,jcell,1,2,1) - currentsol(icell,it,1,2,1) +currentsol(icell,jcell,1,2,1)))
+    end do
+  end do
+
+  total_divB = divergence_accum
+
+  print*,'divergence', total_divB
+end subroutine
