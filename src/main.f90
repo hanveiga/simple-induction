@@ -135,7 +135,7 @@ subroutine evolve(u,u_d,du_d,dudt_d,w_d)
   real(kind=8)::t,dt,top,start,finish,time
   real(kind=8)::cmax, dx, dy, cs_max,v_xmax,v_ymax
   real(kind=8),dimension(1:nx,1:ny,1:m,1:m,1:nvar)::u,dudt,w1,w2,w3,w4,delta_u,nodes
-  real(kind=8)::total_divB, surf_divB, vol_divB, vm
+  real(kind=8)::total_divB, surf_divB, vol_divB, vm, total_divB_w
   real(kind=8):: cp2, ch, decay_coeff
   integer::iter, n, i, j, irk, rkt, ssp
   integer::snap_counter
@@ -231,6 +231,7 @@ subroutine evolve(u,u_d,du_d,dudt_d,w_d)
        call writefields_new(snap_counter,du_d)
        call measure_divergence(total_divB, surf_divB, vol_divB)
        call write_divergence(t,total_divB, surf_divB, vol_divB)
+       call measure_divergence_wasilij(total_divB_w)
        top = top + dtop
 
       write(*,*)'time=',iter,t,dt
@@ -248,6 +249,7 @@ subroutine evolve(u,u_d,du_d,dudt_d,w_d)
  call writefields_new(snap_counter,du_d)
  call measure_divergence(total_divB, surf_divB, vol_divB)
  call write_divergence(t,total_divB, surf_divB, vol_divB)
+ call measure_divergence_wasilij(total_divB_w)
 
  call cpu_time(finish)
 
