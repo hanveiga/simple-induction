@@ -14,6 +14,7 @@ module parameters_dg_2d
   logical,parameter::ldf=.false.
   logical,parameter::corr=.false.
   logical,parameter::make_movie=.true.
+  !integer,parameter::m2=6
 
   character(LEN=3),parameter::solver='RK2' !or EQL to use the equilibrium solution ^^
   character(LEN=3),parameter::limiter_type='ROS' !or EQL to use the equilibrium solution ^^

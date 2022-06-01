@@ -6,11 +6,9 @@
 #define BLOCK 256
 #define RHO0 1E-10
 #define P0 1E-10
-#define UPWIND
-//#define HIO //Activate high-order limiter
+#define UPWIND // if not upwind, LLF
 #define PRC 1E-16 //Percentage threshold on the high-order limiter
 #define LOW_ALPHA //Activate diffusive bound for the high-order limiter
-//#define HLLD
 //#define PP //Activate Positivity preserving limiter
 #define NR 10 //number of Newton-Raphson iterations on the Positivity preserving limiter
 //#define CORR
@@ -215,26 +213,6 @@ __device__  double legendre_deriv_vector_basis(double x, double y, int n, int de
   return div_b_basis;
 }
 
-
-// TO DELETE?
-__device__  double basis(double x, int n, int sq, int var, int dim){
-  double basis;
-  x=min(max(x,-1.0),1.0);
-  switch (var) {
-  case 0: case 1: case 2: case 3: case 6: case 7: case 8:
-    basis = legendre(x,n,sq);
-    break;
-  case 4: //
-    //basis = div_y(x,n,sq,dim);//*sqrt(2./dyy);
-    basis = legendre(x,n,sq);
-    break;
-  case 5: //
-    basis = legendre(x,n,sq);
-    //basis = div_x(x,n,sq,dim);//*sqrt(2./dxx);
-    break;
-  }
-  return basis;
-}
 
 __device__  double ldf_div_basis(double x, double y, int n, int dim){
   double div_b_basis;
@@ -551,32 +529,6 @@ __device__  double ldf_div_basis_prime(double x, double y, int n, int deriv, int
 }
 
 
-__device__  double basis_ldf(double x, double y, int mx, int my, int k, int var){
-  double basis;
-  x=min(max(x,-1.0),1.0);
-  y=min(max(y,-1.0),1.0);
-  switch (var) {
-  case 2: case 3:
-    if ((mx > k-1) || (my > k-1)){
-      basis = 0.0;
-      break;
-    }
-    basis = legendre(x,mx,1)*legendre(y,my,1);
-    break;
-  case 0: //
-    //basis = ldf_div_basis(x,y,mx+my*k,0);
-    basis = legendre_vector_basis_c(x,y,mx+my*k,0);
-    break;
-  case 1: //
-    //basis = ldf_div_basis(x,y,mx+k*my,1);
-    basis = legendre_vector_basis_c(x,y,mx+k*my,1);
-    //basis = div_x(x,n,sq,dim);//*sqrt(2./dxx);
-    break;
-  }
-  return basis;
-}
-
-
 __device__  double basis_ldf_t(double x, double y, int mx, int k, int var){
   double basis;
   int my = 0;
@@ -651,78 +603,6 @@ __device__ int BC(int index, int size, int bc){
   return index;
 }
 
-__device__ double limiting(double* u,int ic,int im,int ip,int jm,int jp,int in,int jn,int m,int b){
-  double d_l_x, d_l_y, d_r_x, d_r_y;
-  double coeff_i,coeff_j;
-  double u_lim;
-  int mode;
-  u_lim = u[(in+jn*m)*b+ic];
-  if(jn > 0){
-#ifndef LOW_ALPHA
-    coeff_j = sqrt((2.0*double(jn)-1.0)/(2.0*double(jn)+1.0));
-#else
-    coeff_j = 0.5/sqrt(4.0*double(jn*jn)-1.0);
-#endif
-    mode = (in+(jn-1)*m)*b;
-    d_r_y = coeff_j*(u[mode+jp]-u[mode+ic]);
-    d_l_y = coeff_j*(u[mode+ic]-u[mode+jm]);
-    u_lim = minmod(u_lim,d_r_y,d_l_y);
-  }
-  if(in > 0){
-#ifndef LOW_ALPHA
-    coeff_i = sqrt((2.0*double(in)-1.0)/(2.0*double(in)+1.0));
-#else
-    coeff_i = 0.5/sqrt(4.0*double(in*in)-1.0);
-#endif
-    mode = ((in-1)+jn*m)*b;
-    d_r_x = coeff_i*(u[mode+ip]-u[mode+ic]);
-    d_l_x = coeff_i*(u[mode+ic]-u[mode+im]);
-    u_lim = minmod(u_lim,d_r_x,d_l_x);
-  }
-  return u_lim;
-}
-
-__device__ double solve_for_t(double rho, double mx, double my, double e, double rhoa, double mxa, double mya, double ea, double gamma, double eps, int id){
-  double a, b, c, d, t, t1, t2;
-  int i, iter=NR;
-  a = 2.0*(rho-rhoa)*(e-ea) - (mx-mxa)*(mx-mxa) - (my-mya)*(my-mya);
-  b = 2.0*(rho-rhoa)*(ea-eps/(gamma-1)) + 2.0*rhoa*(e-ea) - 2.0*(mxa*(mx-mxa)+mya*(my-mya));
-  c = 2.0*rhoa*ea - (mxa*mxa+mya*mya) - 2.0*eps*rhoa/(gamma-1.0);
-  d = sqrt(fabs(b*b-4.0*a*c));
-
-  if ( (gamma-1.0)*(ea-0.5*(mxa*mxa + mya*mya)/rhoa) < eps){
-	t = 0.0;
-	return t;
-	}
-  if ( rhoa < eps){
-	t = 0.0;
-	return t;
-	}
-
-  t1 =1.0 - (a+b+c)/(2*a+b);
-  t2 = - c/b;
-
-  if (abs(1.0-t1) > abs(0.0-t2)){
-	t = t2;
-	}
-  else{
-	t = t1;
-	}
-
-  for(i=0;i<iter-1;i++){
-    t = t - (a*t*t+b*t+c)/(2*a*t+b);}
-
-  if (t < 0.0 || t > 1.0 + eps){
-	if (c/(a*t) <= 1.0 || c/(a*t) >= 0){
-	  t = c/(a*t);}
-	else{
-	  printf("The other root is not acceptable either.");
-	  t = 0.0;
-	  }
-  }
-  return t;
-}
-
 __global__ void get_modes_from_nodes(double* nodes, double* modes, int m, int ny, int nx, int nvar){
 
   int id, ic, jc, im, jm, var;
@@ -785,7 +665,7 @@ __global__ void get_nodes_from_modes(double* modes, double* nodes, int m, int ny
    }
 }
 
-__global__ void get_nodes_from_modes_ldf_test_2(double* modes, double* nodes, int m, int ny, int nx, int nvar){
+__global__ void get_nodes_from_modes_ldf(double* modes, double* nodes, int m, int ny, int nx, int nvar){
 
   int id, ic, jc, iq, jq, var;
   int im, cid;
@@ -820,7 +700,7 @@ __global__ void get_nodes_from_modes_ldf_test_2(double* modes, double* nodes, in
    }
 }
 
-__global__ void get_modes_from_nodes_ldf_test_2(double* nodes, double* modes, int m, int ny, int nx, int nvar){
+__global__ void get_modes_from_nodes_ldf(double* nodes, double* modes, int m, int ny, int nx, int nvar){
 
   int id, ic, jc, mid;
   int iq, jq, cid, modek;
@@ -1466,7 +1346,7 @@ __global__ void compute_LLF(double* u, double* w, double* f, double* FG,
   }
 }
 
-__global__ void compute_upwind(double* u, double* w, double* f, double* FG,
+__global__ void compute_LLF_fixed_speed(double* u, double* w, double* f, double* FG,
 			   double gamma, int m, int ny, int nx, int nvar, int dim, int bc, int size){
   int id, cid, var, cell, face, quad, mc, pc, pid, mid, fsize;
   double speed_m, speed_p, cmax;
@@ -1525,6 +1405,7 @@ __global__ void compute_upwind(double* u, double* w, double* f, double* FG,
 
 __global__ void compute_true_upwind(double* u, double* w, double* f, double* FG,
 			   double gamma, int m, int ny, int nx, int nvar, int dim, int bc, int size){
+  // Roe flux 
   int id, cid, var, cell, face, quad, mc, pc, pid, mid, fsize;
   double speed_m, speed_p, cmax;
   double bnormp, bnormm, c2p, c2m, d2p, d2m;
@@ -1742,240 +1623,6 @@ __global__ void compute_HLLC(double* u,double* w,double* FG,double gamma,int m,i
   }
 }
 
-__global__ void compute_HLLD(double* u,double* w,double* FG,double gamma,int m,int ny,int nx,int nvar,int dim,int bc,int size){
-  int id, cid, cell, quad, mc, pc, pid, mid, face, fsize;
-  int dim1, dim2, bdim1, bdim2;
-  double cmax, cp, cm, vp, vm, sp, sm, dp, dm, pp, pm, e, um, up, Ptotm, Ptotp;
-  double wgdnv[8];
-  double bnormal, bp, bm, rm, rp, Pm, Pp, etoto, wm, wp, Bt1m, Bt2m, Bt1p, Bt2p, sg;
-  double Emagm, Emagp, Etotm, Etotp, c2m, c2p, d2m, d2p, SM, SP, cfastm, cfastp, ustar;
-  double vstarm, vstarp, vstarstar, Ptotstar, Bt1starm, Bt1starp, Bt2starm, Bt2starp, Bt2starstar, estarstarm, estarstarp, estarm, estarp, SAM, SAP;
-  double rstarm, rstarp, wstarp, wstarstar, estar,el, vdotBm, vdotBp, wstarm, Bt1starstar, vdotb, bnorm;
-  id = blockDim.x * blockIdx.x + threadIdx.x;
-  int a = nx+1-dim;
-  int b = (ny+dim)*a;
-  int c = m*b;
-  int d;
-  quad = id/b;
-  if(dim == 0){ //x normal
-    face = id-quad*b;
-    cell = face/a;
-    face -= cell*a;
-    cid = cell*nx + quad*nx*ny;
-    fsize = nx;
-    a = 1;
-  }
-  else if(dim == 1){ //y normal
-    cell = id-quad*b;
-    face = cell/a;
-    cell -= face*a;
-    cid = cell + quad*nx*ny;
-    fsize = ny;
-    a = nx;
-  }
-  b=m*nx*ny*(2*dim); //Index for left/bottom face
-  c=m*nx*ny*(2*dim+1); //Index for right/top face
-  d=4*m*nx*ny;
-  if(id < size){
-    dim1 = dim+1;
-    dim2 = 2-dim;
-
-    //bdim1 = dim1+3; // if we are in x-direction, bdim1 = 4, bdim2 = 5
-    //bdim2 = dim2+3; // if we are in y-direction, bdim1 = 5, bdim2 = 4
-
-    mc = BC(face-1,fsize,bc);
-    pc = BC(face,fsize,bc);
-    pid = cid+pc*a+b; //UR=UL(face)
-    mid = cid+mc*a+c; //UL=UR(face-1)
-
-    // continuity on normal face
-    bnormal = 0.5*(w[pid+d*(dim1+3)]+w[mid+d*(dim1+3)]); //either 4 or 5
-    sg = copysign(1.0,bnormal);
-
-    // left variables
-    rm = w[mid];
-    Pm = w[mid + d*7];
-    um = w[mid + d*dim1];
-    vm = w[mid + d*dim2];
-    wm = w[mid + d*3];
-    bm = bnormal;
-    Bt1m = w[mid + d*(dim2+3)];
-    Bt2m = w[mid + d*6];
-    Emagm = 0.5*(bm*bm + Bt1m*Bt1m + Bt2m*Bt2m);
-    Etotm = Pm*1./(gamma-1) + 0.5*(um*um + vm*vm + wm*wm)*rm + Emagm;
-    Ptotm = Pm + Emagm;
-
-    // right variables
-    rp = w[pid];
-    Pp = w[pid + d*7];
-    up = w[pid + d*dim1];
-    vp = w[pid + d*dim2];
-    wp = w[pid + d*3];
-    bp = bnormal;
-    Bt1p = w[pid + d*(dim2+3)];
-    Bt2p = w[pid + d*6];
-    Emagp = 0.5*(bp*bp + Bt1p*Bt1p + Bt2p*Bt2p);
-    Etotp = Pp*1./(gamma-1.) + 0.5*(up*up + vp*vp + wp*wp)*rp + Emagp;
-    Ptotp  = Pp + Emagp;
-
-    // Find the largest eigenvalues in the normal direction to the interface
-    c2m = gamma*Pm/rm;
-    d2m = Emagm/rm + 0.5*c2m;
-    cfastm = sqrt( d2m + sqrt(d2m*d2m - c2m*bm*bm/rm));
-
-    c2p = gamma*Pp/rp;
-    d2p = Emagp/rp + 0.5*c2p;
-    cfastp = sqrt( d2p + sqrt(d2p*d2p - c2p*bp*bp/rp));
-
-    // Compute HLL wave speed
-    SM = min(um,up)-max(cfastp,cfastm); //different from paper ?
-    SP = max(um,up)+max(cfastp,cfastm);
-
-    //Compute Lagrangian sound speed
-    dm = rm*(um-SM);
-    dp = rp*(SP-up);
-
-    //Compute acoustic star state
-    ustar = (dp*up + dm*um + (-Ptotp + Ptotm))/(dp + dm);
-    Ptotstar = (dp*Ptotm + dm*Ptotp + dp*dm*(um-up))/(dp + dm);
-
-    //! Left star region variables
-    rstarm = rm*(SM-um)/(SM-ustar);
-    estar = rm*(SM-um)*(SM-ustar)-bm*bm;
-    el = rm*(SM-um)*(SM-um)-bm*bm;
-
-    if (abs(estar)<(1e-4)*bm*bm){
-      Bt1starm = Bt1m;
-      Bt2starm = Bt2m;
-      vstarm = vm;
-      wstarm = wm;
-    }
-    else{
-      Bt1starm = Bt1m*el/estar;
-      Bt2starm = Bt2m*el/estar;
-      vstarm = vm - bm*Bt1m*(ustar - um)/estar;
-      wstarm = wm - bm*Bt2m*(ustar - um)/estar;
-    }
-    estarm = ((SM-um)*Etotm - Ptotm*um + Ptotstar*ustar + bm*(um*bm + vm*Bt1m + wm*Bt2m - (ustar*bm + vstarm*Bt1starm + wstarm*Bt2starm)))/(SM-ustar);
-
-    // Right star region variables
-    rstarp = rp*(SP-up)/(SP-ustar);
-    estar =  rp*(SP-up)*(SP-ustar)-bp*bp; //overwrite
-    el = rp*(SP-up)*(SP-up)-bp*bp;
-
-    if (abs(estar)<(1e-4)*bp*bp){
-      Bt1starp = Bt1p;
-      Bt2starp = Bt2p;
-      vstarp = vp;
-      wstarp = wp;
-    }
-    else{
-      Bt1starp = Bt1p*el/estar;
-      Bt2starp = Bt2p*el/estar;
-      vstarp = vp - bp*Bt1p*(ustar - up)/estar;
-      wstarp = wp - bp*Bt2p*(ustar - up)/estar;
-    }
-    estarp = ((SP-up)*Etotp - Ptotp*up + Ptotstar*ustar + bp*(up*bp + vp*Bt1p + wp*Bt2p - (ustar*bp + vstarp*Bt1starp + wstarp*Bt2starp)))/(SP-ustar);
-
-    SAM = ustar - abs(bm)/sqrt(rstarm);
-    SAP = ustar + abs(bp)/sqrt(rstarp);
-
-    // double star
-    vstarstar = (sqrt(rstarm)*vstarm + sqrt(rstarp)*vstarp + sg*(Bt1starp-Bt1starm))/(sqrt(rstarp)+sqrt(rstarm));
-    wstarstar = (sqrt(rstarm)*wstarm + sqrt(rstarp)*wstarp + sg*(Bt2starp-Bt2starm))/(sqrt(rstarp)+sqrt(rstarm));
-    Bt1starstar = (sqrt(rstarm)*Bt1starp + sqrt(rstarp)*Bt1starm + sg*sqrt(rstarp)*sqrt(rstarm)*(vstarp-vstarm))/(sqrt(rstarp)+sqrt(rstarm));
-    Bt2starstar = (sqrt(rstarm)*Bt2starp + sqrt(rstarp)*Bt2starm + sg*sqrt(rstarp)*sqrt(rstarm)*(wstarp-wstarm))/(sqrt(rstarp)+sqrt(rstarm));
-
-    estarstarm = estarm - sg*sqrt(rstarm)*((ustar*bm + vstarm*Bt1starm + wstarm*Bt2starm) - (ustar*bm + vstarstar*Bt1starstar + wstarstar*Bt2starstar));
-    estarstarp = estarp + sg*sqrt(rstarp)*((ustar*bp + vstarp*Bt1starp + wstarp*Bt2starp) - (ustar*bp + vstarstar*Bt1starstar + wstarstar*Bt2starstar));
-
-    //Sample the solution at x/t=0
-      if(SM>0.0){
-        wgdnv[0] = rm;
-        wgdnv[dim1] = um;
-        wgdnv[dim2] = vm;
-        wgdnv[3] = wm;
-        wgdnv[dim1 + 3] = bm;
-        wgdnv[dim2 + 3] = Bt1m;
-        wgdnv[6] = Bt2m;
-        wgdnv[7] = Ptotm;
-        etoto = Etotm;
-        //vdotb = wgdnv[dim1]*wgdnv[dim1 + 3] + wgdnv[dim2]*wgdnv[dim2 + 3] + wgdnv[3]* wgdnv[6];
-      }
-      else if(SM<=0 && SAM>=0.0){
-        wgdnv[0] = rstarm;
-        wgdnv[dim1] = ustar;
-        wgdnv[dim2] = vstarm;
-        wgdnv[3] = wstarm;
-        wgdnv[dim1 + 3] = bm;
-        wgdnv[dim2 + 3] = Bt1starm;
-        wgdnv[6] = Bt2starm;
-        wgdnv[7] = Ptotstar;
-        etoto = estarm;
-        //vdotb = wgdnv[dim1]*wgdnv[dim1 + 3] + wgdnv[dim2]*wgdnv[dim2 + 3] + wgdnv[3]* wgdnv[6];
-      }
-      else if(ustar>=0.0 && SAM <= 0.0){
-        wgdnv[0] = rstarm;
-        wgdnv[dim1] = ustar;
-        wgdnv[dim2] = vstarstar;
-        wgdnv[3] = wstarstar;
-        wgdnv[dim1 + 3] = bm;
-        wgdnv[dim2 + 3] = Bt1starstar;
-        wgdnv[6] = Bt2starstar;
-        wgdnv[7] = Ptotstar;
-        etoto = estarstarm;
-        //vdotb = wgdnv[dim1]*wgdnv[dim1 + 3] + wgdnv[dim2]*wgdnv[dim2 + 3] + wgdnv[3]* wgdnv[6];
-      }
-      else if(SAP>=0.0 && ustar <= 0.0){
-        wgdnv[0] = rstarm;
-        wgdnv[dim1] = ustar;
-        wgdnv[dim2] = vstarstar;
-        wgdnv[3] = wstarstar;
-        wgdnv[dim1 + 3] = bm;
-        wgdnv[dim2 + 3] = Bt1starstar;
-        wgdnv[6] = Bt2starstar;
-        wgdnv[7] = Ptotstar;
-        etoto = estarstarp;
-        //vdotb = wgdnv[dim1]*wgdnv[dim1 + 3] + wgdnv[dim2]*wgdnv[dim2 + 3] + wgdnv[3]* wgdnv[6];
-      }
-      else if (SAP<=0.0 && SP >= 0.0){
-        wgdnv[0] = rstarp;
-        wgdnv[dim1] = ustar;
-        wgdnv[dim2] = vstarp;
-        wgdnv[3] = wstarp;
-        wgdnv[dim1 + 3] = bp;
-        wgdnv[dim2 + 3] = Bt1starp;
-        wgdnv[6] = Bt2starp;
-        wgdnv[7] = Ptotstar;
-        etoto = estarp;
-        //vdotb = wgdnv[dim1]*wgdnv[dim1 + 3] + wgdnv[dim2]*wgdnv[dim2 + 3] + wgdnv[3]* wgdnv[6];
-      }
-      else if (SP<=0.0){
-        wgdnv[0] = rp;
-        wgdnv[dim1] = up;
-        wgdnv[dim2] = vp;
-        wgdnv[3] = wp;
-        wgdnv[dim1 + 3] = bp;
-        wgdnv[dim2 + 3] = Bt1p;
-        wgdnv[6] = Bt2p;
-        wgdnv[7] = Ptotp;
-        etoto = Etotp;
-      }
-
-    vdotb = wgdnv[dim1]*wgdnv[dim1 + 3] + wgdnv[dim2]*wgdnv[dim2 + 3] + wgdnv[3]* wgdnv[6];
-    bnorm =  wgdnv[dim2 + 3]*wgdnv[dim2 + 3] + wgdnv[dim1 + 3]*wgdnv[dim1 + 3] + wgdnv[6]*wgdnv[6];
-
-    FG[id]=wgdnv[0]*wgdnv[dim1];
-    FG[id+size*dim1]=wgdnv[0]*wgdnv[dim1]*wgdnv[dim1]+wgdnv[7] - wgdnv[dim1 + 3]*wgdnv[dim1 + 3];
-    FG[id+size*dim2]=wgdnv[0]*wgdnv[dim1]*wgdnv[dim2] - wgdnv[dim1 + 3]*wgdnv[dim2 + 3];
-    FG[id+size*3]= wgdnv[0]*wgdnv[dim1]*wgdnv[3] - wgdnv[dim1 + 3]*wgdnv[6]; // z component
-    FG[id+size*(dim1 + 3)]= 0.0; //!wgdnv[0]*wgdnv[dim1]; // B normal component
-    FG[id+size*(dim2 + 3)]= wgdnv[dim1]*wgdnv[dim2+3] - wgdnv[dim2]*wgdnv[dim1+3];// wgdnv[0]*wgdnv[dim1]; // B tangential component
-    FG[id+size*6]= wgdnv[dim1]*wgdnv[6] - wgdnv[3]*wgdnv[dim1+3]; // B normal component
-    FG[id+size*7] = wgdnv[dim1]*(etoto+wgdnv[7]) - wgdnv[dim1+3]*(vdotb); //energy
-  }
-}
-
 __global__ void flux_line_integral(double* edge,double* F,double* G,int m,int ny,int nx,int nvar){
   int id, ic, jc, im, jm, va;
   int q, idF, idG;
@@ -2009,7 +1656,6 @@ __global__ void flux_line_integral(double* edge,double* F,double* G,int m,int ny
     edge[id+size] = valy;
   }
 }
-
 
 __global__ void flux_line_integral_ldf_t(double* edge,double* F,double* G, double invdx, double invdy, int m,int ny,int nx,int nvar){
   int id, ic, jc, im, jm, va;
@@ -2054,100 +1700,6 @@ __global__ void flux_line_integral_ldf_t(double* edge,double* F,double* G, doubl
   }
 }
 
-
-__global__ void grad_phi(double* grad, double* x, double* y, double x0, double y0, double cutoff,  double eps, int size){
-  int id;
-  id = blockDim.x * blockIdx.x + threadIdx.x;
-  double dx, dy, r;
-  if( id < size ){
-    dx = x[id]-x0;
-    dy = y[id]-y0;
-    r = sqrt(dx*dx+dy*dy);
-    cutoff=0.5-0.1*0.5;
-    eps=0.25;
-    if (r > cutoff){
-      grad[id] = dx/(r*r*r);
-      grad[id+size] = dy/(r*r*r);
-      //grad[id] = dx/(r*(r*r+eps*eps));
-      //grad[id+size] = dy/(r*(r*r+eps*eps));
-    }
-    else{
-      //grad[id] = dx/(r*(r*r+eps*eps));
-      //grad[id+size] = dy/(r*(r*r+eps*eps));
-      grad[id] = dx/(r*(r*r+eps*eps))*(cutoff*(cutoff*cutoff+eps*eps))/(cutoff*cutoff*cutoff);
-      grad[id+size] = dy/(r*(r*r+eps*eps))*(cutoff*(cutoff*cutoff+eps*eps))/(cutoff*cutoff*cutoff);
-    }
-  }
-}
-
-__global__ void grad_phi_soft(double* grad, double* x, double* y, double x0, double y0, double cutoff,  double eps, int size){
-  int id;
-  id = blockDim.x * blockIdx.x + threadIdx.x;
-  double dx, dy, r,vx,vy, vt;
-  if( id < size ){
-    dx = x[id]-x0;
-    dy = y[id]-y0;
-    r = sqrt(dx*dx+dy*dy);
-    cutoff=0.25;//0.5-0.1*0.5;
-    eps=0.1;
-    grad[id] = dx/(r*(r*r+eps*eps)); //dx/(r*r*r);
-    grad[id+size] = dy/(r*(r*r+eps*eps));
-  }
-}
-
-#ifdef LASRC
-__global__ void grad_phi_const(double* grad, int size){
-  int id;
-  id = blockDim.x * blockIdx.x + threadIdx.x;
-  if( id < size )
-       grad[id] = 1.0;
-       grad[id+size] = 0.0;
-}
-
-#endif
-
-__global__ void get_source(double* w, double* s, double* grad, int size){
-  int id;
-  id = blockDim.x * blockIdx.x + threadIdx.x;
-  double rho,gradx,grady;
-  if( id < size ){
-    rho = w[id];
-    gradx = grad[id];
-    grady = grad[id+size];
-    s[id] = 0.0;
-    s[id+size] = -rho*gradx;
-    s[id+size*2] = -rho*grady;
-    s[id+size*3] = -rho*(w[id+size]*gradx+w[id+size*2]*grady);
-  }
-}
-
-__global__ void source_vol (double* s_vol, double* s, int m, int ny, int nx, int nvar) {
-  int id, ic, jc, im, jm, va;
-  int iq, jq, cid;
-  int a = nx;
-  int b = ny*a;
-  int c = m*b;
-  int d = m*c;
-  int size = nvar*d;
-  double val=0.0;
-  id = blockDim.x * blockIdx.x + threadIdx.x;
-  va  = id/d;
-  ic  = id - va*d;
-  jm  = ic/c;
-  ic -= jm*c;
-  im  = ic/b;
-  ic -= im*b;
-  jc  = ic/a;
-  ic -= jc*a;
-  cid = ic + jc*a + va*d;
-  if( id < size ){
-    for( iq=0; iq<m; iq++)
-      for( jq=0; jq<m; jq++)
-	val += s[iq*b+jq*c+cid]*legendre(xquad[iq],im,1)*wxquad[iq]*legendre(yquad[jq],jm,1)*wyquad[jq];
-    s_vol[id] = val;
-  }
-}
-
 __global__ void wave_killing_bc (double* nodes, double* x, double* y, double boxlen_x, double dt, int size) {
   int id;
   id = blockDim.x * blockIdx.x + threadIdx.x;
@@ -2161,175 +1713,6 @@ __global__ void wave_killing_bc (double* nodes, double* x, double* y, double box
     lambdadt = 0.005*dt*( r < 0.4*boxlen_x ?  0.0 : pow(1.-exp(-(r-0.4*boxlen_x)/(0.04*boxlen_x)),6.0));
     nodes[id] = (nodes[id]+lambdadt*rho0)/(1+lambdadt);
     //    nodes[id] = lambdadt;
-  }
-}
-
-__global__ void HIO_limiter(double* modes, double* limited, int m, int ny, int nx, int nvar, int bc){
-  int id,ic,jc,va,cid,lid,rid,bid,tid,i,j,done=0;
-  int a = nx;
-  int b = ny*a;
-  int c = m*b;
-  int d = m*c;
-  int size = nx*ny*nvar;
-  double val1,val2,mode1,mode2;
-  id = blockDim.x * blockIdx.x + threadIdx.x;
-  va  = id/b;
-  ic  = id - va*b;
-  jc  = ic/a;
-  ic -= jc*a;
-  cid =  ic + jc*a + va*d;
-  if(id < size){
-    lid = BC(ic-1,nx,bc) + jc*a + va*d;
-    rid = BC(ic+1,nx,bc) + jc*a + va*d;
-    tid = ic + BC(jc+1,ny,bc)*a + va*d;
-    bid = ic + BC(jc-1,ny,bc)*a + va*d;
-    for(i=m-1;i>0;i--){
-      val1 = limiting(modes,cid,lid,rid,bid,tid,i,i,m,b);
-      limited[(i+i*m)*b+cid] = val1;//modes[(i+i*m)*b+cid];
-      mode1 = modes[(i+i*m)*b+cid];
-      if (fabs(val1 - mode1) < PRC*fabs(mode1))
-      	break;
-      //limited[(i+i*m)*b+cid] = val1;
-      for(j=i-1;j>=0;j--){
-      	val1 = limiting(modes,cid,lid,rid,bid,tid,i,j,m,b);
-      	val2 = limiting(modes,cid,lid,rid,bid,tid,j,i,m,b);
-      	limited[(i+j*m)*b+cid] = val1;//modes[(i+j*m)*b+cid];
-      	limited[(j+i*m)*b+cid] = val2;//modes[(j+i*m)*b+cid];
-      	//mode1 = modes[(i+j*m)*b+cid];
-      	//mode2 = modes[(j+i*m)*b+cid];
-      	if (fabs(val1 - mode1) < PRC*fabs(mode1) && fabs(val2 - mode2) < PRC*fabs(mode2)){
-      	  done = 1;
-      	  break;
-      	}
-    	//limited[(i+j*m)*b+cid] = val1;
-    	//limited[(j+i*m)*b+cid] = val2;
-      }
-      if(done == 1)
-	       break;
-    }
-  }
-}
-
-__global__ void limit_rho(double* modes, double* uX, double* uY, double* pmodes, double eps, int k, int m, int ny, int nx, int nvar){
-  int id, iq, jq, gll, gl;
-  int a = nx;
-  int b = ny*a;
-  int size = nx*ny;
-  double theta,rho_av,rho_min,valx,valy;
-  id = blockDim.x * blockIdx.x + threadIdx.x;
-  if( id < size ){
-    rho_av = modes[id];
-    rho_min = rho_av;
-   for(gll=0;gll<k;gll++){
-      for(gl=0;gl<m;gl++){
-	valx=uX[(gl+gll*m)*b+id];
-	valy=uY[(gl+gll*m)*b+id];
-	if(valx < rho_min)
-	  rho_min = valx;
-	if(valy < rho_min)
-	  rho_min = valy;
-      }
-    }
-    theta = min(fabs((rho_av-eps)/(rho_av-rho_min)),1.);
-    if(theta<1.)
-      for(iq=0;iq<m;iq++)
-	for(jq=0;jq<m;jq++)
-	  if (iq+jq>0)
-	    pmodes[(iq+jq*m)*b+id] = theta*modes[(iq+jq*m)*b+id];
-  }
-}
-
-__global__ void limit_by_pressure(double* uX, double* uY, double* pmodes,  double* modes, double gamma, double eps, int k, int m, int ny, int nx, int nvar){
-  int id, va, gl, gll;
-  int im, jm, qid, xs;
-  int a = nx;
-  int b = ny*a;
-  int c = m*b;
-  int d = m*c;
-
-  int size = nx*ny;
-  double tau, tau_min=1.0, P, rho, Mx, My, e, rhoav, mxav, myav, eav;
-  id = blockDim.x * blockIdx.x + threadIdx.x;
-  xs = m*k*ny*nx;
-  if( id < size ){
-    rhoav = pmodes[id];
-    mxav  = pmodes[id+d];
-    myav  = pmodes[id+d*2];
-    eav   = pmodes[id+d*3];
-
-    for(gll=0;gll<k;gll++){
-      for(gl=0;gl<m;gl++){
-	qid = (gl+gll*m)*b+id;
-	rho = uX[qid];
-	Mx  = uX[qid+xs];
-	My  = uX[qid+xs*2];
-	e   = uX[qid+xs*3];
-	P = (gamma-1.)*(e-0.5*(Mx*Mx+My*My)/rho);
-	if(P >= eps)
-	  tau = 1.;
-	else
-	  tau = solve_for_t(rho,Mx,My,e,rhoav,mxav,myav,eav,gamma,eps,id);
-	if(tau < tau_min)
-	  tau_min = tau;
-	rho = uY[qid];
-	Mx  = uY[qid+xs];
-	My  = uY[qid+xs*2];
-	e   = uY[qid+xs*3];
-	P = (gamma-1.)*(e-0.5*(Mx*Mx+My*My)/rho);
-	if(P >= eps)
-	  tau = 1.;
-	else
-	  tau = solve_for_t(rho,Mx,My,e,rhoav,mxav,myav,eav,gamma,eps,id);
-	if(tau < tau_min)
-	  tau_min = tau;
-      }
-    }
-    for(va = 0; va < nvar; va++)
-      for( im=0; im < m; im++)
-	for( jm=0; jm < m; jm++)
-	  if (im+jm>0)
-	    modes[(im+jm*m)*b+id+va*d] = tau_min*pmodes[(im+jm*m)*b+id+va*d];
-  }
-}
-__global__ void check_positivity(double* uX, double* uY, double* modes, double gamma, double eps, int k, int m, int ny, int nx, int nvar){
-  int id, va, gl, gll;
-  int im, jm, qid, xs, negative;
-  int a = nx;
-  int b = ny*a;
-  int c = m*b;
-  int d = m*c;
-  int size = nx*ny;
-  double P, rho, vx, vy;
-  id = blockDim.x * blockIdx.x + threadIdx.x;
-  xs = m*k*ny*nx;
-  if( id < size ){
-    for(gll=0;gll<k;gll++){
-      for(gl=0;gl<m;gl++){
-	qid = (gl+gll*m)*b+id;
-	rho = uX[qid];
-	vx  = uX[qid+xs]/rho;
-	vy  = uX[qid+xs*2]/rho;
-	P = (gamma-1.)*(uX[qid+xs*3]-0.5*(vx*vx+vy*vy)*rho);
-	if( P < eps || rho < eps ){
-	   negative = 1;
-	   break;
-	}
-	rho = uY[qid];
-	vx  = uY[qid+xs]/rho;
-	vy  = uY[qid+xs*2]/rho;
-	P = (gamma-1.)*(uY[qid+xs*3]-0.5*(vx*vx+vy*vy)*rho);
-	if( P < eps || rho < eps ){
-	   negative = 1;
-	   break;
-	}
-      }
-    }
-    if( negative == 1)
-      for(va = 0; va < nvar; va++)
-	for( im=0; im < m; im++)
-	  for( jm=0; jm < m; jm++)
-	    if (im+jm>0)
-	      modes[(im+jm*m)*b+id+va*d] = 0.0;
   }
 }
 
@@ -2426,15 +1809,15 @@ extern "C" void device_get_nodes_from_modes_(double** modes, double** nodes){
   get_nodes_from_modes<<<(size+BLOCK-1)/BLOCK,BLOCK>>>(*modes,*nodes,m,ny,nx,nvar);
 }
 
-extern "C" void device_get_modes_from_nodes_ldf_b_2_(double** nodes, double** modes, double** bmodes){
+extern "C" void device_get_modes_from_nodes_ldf_b_(double** nodes, double** modes, double** bmodes){
   int bsize = m*(m+3)/2;
-  get_modes_from_nodes_ldf_test_2<<<(nx*ny*bsize+BLOCK-1)/BLOCK,BLOCK>>>(*nodes,*bmodes,m,ny,nx,nvar);
+  get_modes_from_nodes_ldf<<<(nx*ny*bsize+BLOCK-1)/BLOCK,BLOCK>>>(*nodes,*bmodes,m,ny,nx,nvar);
 
 }
 
-extern "C" void device_get_nodes_from_modes_ldf_b_2_(double** modes, double** bmodes, double** nodes){
+extern "C" void device_get_nodes_from_modes_ldf_b_(double** modes, double** bmodes, double** nodes){
   int usize = nx*ny*m*m;
-  get_nodes_from_modes_ldf_test_2<<<(usize+BLOCK-1)/BLOCK,BLOCK>>>(*bmodes,*nodes,m,ny,nx,nvar);
+  get_nodes_from_modes_ldf<<<(usize+BLOCK-1)/BLOCK,BLOCK>>>(*bmodes,*nodes,m,ny,nx,nvar);
 }
 
 extern "C" void device_compute_min_dt_t_ (double* Dt){
@@ -2442,7 +1825,7 @@ extern "C" void device_compute_min_dt_t_ (double* Dt){
   int usize = nx*ny*m*m;
   double dt;
   // get nodes from modes
-  get_nodes_from_modes_ldf_test_2<<<(usize+BLOCK-1)/BLOCK,BLOCK>>>(b_modes,w1,m,ny,nx,nvar);
+  get_nodes_from_modes_ldf<<<(usize+BLOCK-1)/BLOCK,BLOCK>>>(b_modes,w1,m,ny,nx,nvar);
   compute_primitive_t<<<(size+BLOCK-1)/BLOCK,BLOCK>>>( w1, w, gmma, m,usize, size);
   compute_min_dt<<<1,BLOCK>>>( w, pivot, gmma, cfl, dx, dy, m, usize, size);
   cudaMemcpy(&dt,pivot,sizeof(double),cudaMemcpyDeviceToHost);
@@ -2502,55 +1885,15 @@ extern "C" void device_compute_max_v_(double *vm){
 
 }
 
-extern "C" void device_compute_limiter_(double** modes){
-#ifdef LIMIT
-    int size=nx*ny*nvar;
-  #ifdef TVD
-    compute_primitive<<<(nx*ny+BLOCK-1)/BLOCK,BLOCK>>>(*modes,w,gmma,usize,nx*ny);
-    size = nx*ny*(m*m-1);
-    cons_to_prim<<<(size+BLOCK-1)/BLOCK,BLOCK>>>(*modes,w,gmma,m,ny,nx,usize,size);
-    cudaMemcpy(pivot,w,tsize*sizeof(double),cudaMemcpyDeviceToDevice);
-    HIO_limiter<<<(nx*ny*nvar+BLOCK-1)/BLOCK,BLOCK>>>(pivot,w,m,ny,nx,nvar,bc);
-    prim_to_cons<<<(size+BLOCK-1)/BLOCK,BLOCK>>>(w,*modes,gmma,m,ny,nx,usize,size);
-  #endif
-
-  #ifdef HIO
-    compute_primitive<<<(nx*ny+BLOCK-1)/BLOCK,BLOCK>>>(*modes,w,gmma,usize,nx*ny);
-    size = nx*ny*(m*m-1);
-    cons_to_prim<<<(size+BLOCK-1)/BLOCK,BLOCK>>>(*modes,w,gmma,m,ny,nx,usize,size);
-    cudaMemcpy(pivot,w,tsize*sizeof(double),cudaMemcpyDeviceToDevice);
-    HIO_limiter<<<(nx*ny*nvar+BLOCK-1)/BLOCK,BLOCK>>>(pivot,w,m,ny,nx,nvar,bc);
-    prim_to_cons<<<(size+BLOCK-1)/BLOCK,BLOCK>>>(w,*modes,gmma,m,ny,nx,usize,size);
-  #endif
-  #ifdef CP
-    double eps = 1E-10;
-    compute_GxGLL<<<(nx*ny*m*k+BLOCK-1)/BLOCK,BLOCK>>>(uX,uY,*modes,k,m,ny,nx,nvar);
-    check_positivity<<<(nx*ny+BLOCK-1)/BLOCK,BLOCK>>>(uX,uY,*modes,gmma,eps,k,m,ny,nx,nvar);
-  #endif
-  #ifdef PP
-    compute_GxGLL<<<(nx*ny*m*k+BLOCK-1)/BLOCK,BLOCK>>>(uX,uY,*modes,k,m,ny,nx,1);//Only for the density
-    cudaMemcpy(pivot,*modes,tsize*sizeof(double),cudaMemcpyDeviceToDevice);
-    limit_rho<<<(nx*ny+BLOCK-1)/BLOCK,BLOCK>>>(*modes,uX,uY,pivot,RHO0,k,m,ny,nx,nvar);
-    compute_GxGLL<<<(nx*ny*m*k*nvar+BLOCK-1)/BLOCK,BLOCK>>>(uX,uY,pivot,k,m,ny,nx,nvar);//Now for all the quantities with the positive modes of the density
-    limit_by_pressure<<<(nx*ny+BLOCK-1)/BLOCK,BLOCK>>>(uX,uY,pivot,*modes,gmma,P0,k,m,ny,nx,nvar);
-    cudaDeviceSynchronize();
-  #endif
-#endif
-}
-
 extern "C" void compute_psi_correction(double* dudt, double* modes, double dt, double vm){
   double ch, cp2;
-  //vm = 0.5;
-  //printf("velo: %.14f \n", vm);
   ch = vm*5.;//cbrt(0.2*1.0/(dt*dt));
   cp2 = ch*0.18;
   // convert psi to nodes (change to only do the last variable)
   get_nodes_from_modes<<<(tsize+BLOCK-1)/BLOCK,BLOCK>>>(modes,u_d_q,m,ny,nx,nvar);
   // perform integral \int psi * phi dxdy
-  //volume_integral<<<(tsize+BLOCK-1)/BLOCK,BLOCK>>>(pivot,u_d_q,-(ch*ch)/(cp2),invdx,invdy,m,ny,nx,nvar);
-  // add correction to
   volume_integral<<<(tsize+BLOCK-1)/BLOCK,BLOCK>>>(pivot,u_d_q,-1.0/(cp2),invdx,invdy,m,ny,nx,nvar);
-
+  // add correction
   sum2<<< (usize+BLOCK-1)/BLOCK,BLOCK >>>(&dudt[usize*3],&dudt[usize*3], &pivot[usize*3], ch*ch, usize);
 
   cudaDeviceSynchronize();
@@ -2582,7 +1925,6 @@ extern "C" void device_compute_update_(int* Iter, int* SSP, double* DT, double* 
     modes = w4;
     break;
   }
-  //device_compute_limiter_(&modes);
 
   // slve parabolic part of psi
 
@@ -2600,14 +1942,9 @@ extern "C" void device_compute_update_(int* Iter, int* SSP, double* DT, double* 
   compute_true_upwind<<<(m*ny*(nx+1)+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f1,F,gmma,m,ny,nx,nvar,0,bc,m*ny*(nx+1));
   compute_true_upwind<<<(m*(ny+1)*nx+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f2,G,gmma,m,ny,nx,nvar,1,bc,m*(ny+1)*nx);
 #else
-  #ifndef HLLD
     compute_flux<<<(4*nx*ny*m+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f1,flux_f2,4*nx*ny*m);
-    compute_LLF<<<(m*ny*(nx+1)+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f1,F,gmma,m,ny,nx,nvar,0,bc,m*ny*(nx+1));
-    compute_LLF<<<(m*(ny+1)*nx+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f2,G,gmma,m,ny,nx,nvar,1,bc,m*(ny+1)*nx);
-  #else
-    compute_HLLD<<<(m*ny*(nx+1)+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,F,gmma,m,ny,nx,nvar,0,bc,m*ny*(nx+1));
-    compute_HLLD<<<(m*(ny+1)*nx+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,G,gmma,m,ny,nx,nvar,1,bc,m*(ny+1)*nx);
-  #endif
+    compute_LLF_fixed_speed<<<(m*ny*(nx+1)+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f1,F,gmma,m,ny,nx,nvar,0,bc,m*ny*(nx+1));
+    compute_LLF_fixed_speed<<<(m*(ny+1)*nx+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f2,G,gmma,m,ny,nx,nvar,1,bc,m*(ny+1)*nx);
 #endif
 
   flux_line_integral<<<(tsize+BLOCK-1)/BLOCK,BLOCK>>>(edge,F,G,m,ny,nx,nvar);
@@ -2702,9 +2039,9 @@ extern "C" void device_compute_update_lldf_test_new_(int* Iter, int* SSP, double
     bmodes= b_modes4;
     break;
   }
-  //device_compute_limiter_(&modes);
+  
 
-  get_nodes_from_modes_ldf_test_2<<<(usize+BLOCK-1)/BLOCK,BLOCK>>>(bmodes,u_d_q,m,ny,nx,nvar); // TODO
+  get_nodes_from_modes_ldf<<<(usize+BLOCK-1)/BLOCK,BLOCK>>>(bmodes,u_d_q,m,ny,nx,nvar); // TODO
   compute_primitive<<<(usize+BLOCK-1)/BLOCK,BLOCK>>>( u_d_q, w, gmma, usize, usize);
 
   compute_flux<<<(usize+BLOCK-1)/BLOCK,BLOCK>>>(u_d_q, w, flux_q1, flux_q2, usize);
@@ -2717,17 +2054,12 @@ extern "C" void device_compute_update_lldf_test_new_(int* Iter, int* SSP, double
 
 #ifdef UPWIND
   compute_flux<<<(4*nx*ny*m+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f1,flux_f2,4*nx*ny*m);
-  compute_upwind<<<(m*ny*(nx+1)+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f1,F,gmma,m,ny,nx,nvar,0,bc,m*ny*(nx+1));
-  compute_upwind<<<(m*(ny+1)*nx+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f2,G,gmma,m,ny,nx,nvar,1,bc,m*(ny+1)*nx);
+  compute_true_upwind<<<(m*ny*(nx+1)+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f1,F,gmma,m,ny,nx,nvar,0,bc,m*ny*(nx+1));
+  compute_true_upwind<<<(m*(ny+1)*nx+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f2,G,gmma,m,ny,nx,nvar,1,bc,m*(ny+1)*nx);
 #else
-  #ifndef HLLD
     compute_flux<<<(4*nx*ny*m+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f1,flux_f2,4*nx*ny*m);
-    compute_LLF<<<(m*ny*(nx+1)+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f1,F,gmma,m,ny,nx,nvar,0,bc,m*ny*(nx+1));
-    compute_LLF<<<(m*(ny+1)*nx+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f2,G,gmma,m,ny,nx,nvar,1,bc,m*(ny+1)*nx);
-  #else
-    compute_HLLD<<<(m*ny*(nx+1)+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,F,gmma,m,ny,nx,nvar,0,bc,m*ny*(nx+1));
-    compute_HLLD<<<(m*(ny+1)*nx+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,G,gmma,m,ny,nx,nvar,1,bc,m*(ny+1)*nx);
-  #endif
+    compute_LLF_fixed_speed<<<(m*ny*(nx+1)+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f1,F,gmma,m,ny,nx,nvar,0,bc,m*ny*(nx+1));
+    compute_LLF_fixed_speed<<<(m*(ny+1)*nx+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f2,G,gmma,m,ny,nx,nvar,1,bc,m*(ny+1)*nx);
 #endif
 
   flux_line_integral_ldf_t<<<(bs+BLOCK-1)/BLOCK,BLOCK>>>(edges_b,F,G,invdx,invdy,m,ny,nx,nvar); // TODO
@@ -2830,10 +2162,14 @@ extern "C" void post_process_b_(int* Iter, int* SSP, double* DT, double* T, doub
   compute_primitive<<<(4*nx*ny*m+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,gmma,4*nx*ny*m,4*nx*ny*m);
 
   compute_flux_b<<<(4*nx*ny*m+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f1,flux_f2, ch, m, 4*nx*ny*m);
-  compute_upwind<<<(m*ny*(nx+1)+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f1,F,gmma,m,ny,nx,nvar,0,bc,m*ny*(nx+1));
-  compute_upwind<<<(m*(ny+1)*nx+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f2,G,gmma,m,ny,nx,nvar,1,bc,m*(ny+1)*nx);
-  //compute_average<<<(m*ny*(nx+1)+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f1,F,gmma,m,ny,nx,nvar,0,bc,m*ny*(nx+1));
-  //compute_average<<<(m*(ny+1)*nx+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f2,G,gmma,m,ny,nx,nvar,1,bc,m*(ny+1)*nx);
+  
+  //#ifdef UPWIND
+  //  compute_true_upwind<<<(m*ny*(nx+1)+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f1,F,gmma,m,ny,nx,nvar,0,bc,m*ny*(nx+1));
+  //  compute_true_upwind<<<(m*(ny+1)*nx+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f2,G,gmma,m,ny,nx,nvar,1,bc,m*(ny+1)*nx);
+  //#else
+    compute_LLF_fixed_speed<<<(m*ny*(nx+1)+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f1,F,gmma,m,ny,nx,nvar,0,bc,m*ny*(nx+1));
+    compute_LLF_fixed_speed<<<(m*(ny+1)*nx+BLOCK-1)/BLOCK,BLOCK>>>(ufaces,wfaces,flux_f2,G,gmma,m,ny,nx,nvar,1,bc,m*(ny+1)*nx);
+  //#endif
 
   flux_line_integral<<<(tsize+BLOCK-1)/BLOCK,BLOCK>>>(edge,F,G,m,ny,nx,nvar);
 
@@ -2904,27 +2240,9 @@ extern "C" void parabolic_psi_(double* DT, double* T, double *vm, double *Dx, do
   double constant;
   double coeff = *Coeff;
   modes = du;
-
-  //parabolic_term<<<(usize+BLOCK-1)/BLOCK,BLOCK>>>(du,du,v_max,dt);
-  //ch = 0.15/(2.0*m-1)*(dx/(2.0*dt)); // v_max;
-  //printf("%f %f\n",ch, cp );
-  //cp2 = dx*ch/0.4;
-  //constant = exp(-3.*dt);
-  //constant = exp(-0.2*ch/(dx)*dt);
-  //coeff = 0.4*ch/(dx/dt);
   constant = exp(-coeff);
-
-  //constant = exp(-(ch*ch/cp2)*dt);
-
-  //get_nodes_from_modes<<<(tsize+BLOCK-1)/BLOCK,BLOCK>>>(modes,u_d_q,m,ny,nx,nvar);
-
-  //cudaDeviceSynchronize();
   parabolic_decay<<<(usize+BLOCK-1)/BLOCK,BLOCK>>>(&modes[usize*3],&modes[usize*3],constant,usize);
-
   cudaDeviceSynchronize();
-  //get_modes_from_nodes<<<(tsize+BLOCK-1)/BLOCK,BLOCK>>>(u_d_q,modes,m,ny,nx,nvar);
-
-  //cudaDeviceSynchronize();
 }
 
 extern "C" void mem_check(size_t free, size_t total){

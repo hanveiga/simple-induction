@@ -69,8 +69,8 @@ subroutine evolve_ldf(u,u_d,du_d,db_d,dudt_d,w_d)
 
   ! IC after projected into modes
   snap_counter = 1
-  call device_get_modes_from_nodes_ldf_b_2(u_d,du_d, db_d)
-  call device_get_nodes_from_modes_ldf_b_2(du_d,db_d,u_d)
+  call device_get_modes_from_nodes_ldf_b(u_d,du_d, db_d)
+  call device_get_nodes_from_modes_ldf_b(du_d,db_d,u_d)
   call writefields_new(snap_counter,u_d)
 
   t=0
@@ -103,7 +103,7 @@ subroutine evolve_ldf(u,u_d,du_d,db_d,dudt_d,w_d)
       if ((make_movie).and.(t>=top))then
          snap_counter = snap_counter + 1
 
-         call device_get_nodes_from_modes_ldf_b_2(du_d,db_d,u_d)
+         call device_get_nodes_from_modes_ldf_b(du_d,db_d,u_d)
          call writefields_new(snap_counter,u_d)
          call measure_divergence_ldf(total_divB, surf_divB, vol_divB,db_d)
          call write_divergence(t,total_divB, surf_divB, vol_divB)
@@ -116,7 +116,7 @@ subroutine evolve_ldf(u,u_d,du_d,db_d,dudt_d,w_d)
    call cpu_time(finish)
    snap_counter = snap_counter + 1
 
-   call device_get_nodes_from_modes_ldf_b_2(du_d,db_d,u_d)
+   call device_get_nodes_from_modes_ldf_b(du_d,db_d,u_d)
    call writefields_new(snap_counter,u_d)
    call measure_divergence_ldf(total_divB, surf_divB, vol_divB,db_d)
    call write_divergence(t,total_divB, surf_divB, vol_divB)
