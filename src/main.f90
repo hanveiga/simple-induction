@@ -3,6 +3,8 @@ program main
   use parameters_dg_2d
   real(kind=8),dimension(:,:,:,:,:),allocatable::u,w,u_p
 
+  real(kind=8),dimension(:,:,:,:),allocatable::A_pot
+
   !device pointers
   type (c_ptr) :: u_d, du_d,dudt_d, w_d, db_d
   type (c_ptr) :: x_d, y_d
@@ -16,6 +18,13 @@ program main
   allocate(x_quad(m),w_x_quad(m),y_quad(m),w_y_quad(m),x_gll(k),w_x_gll(k),y_gll(k),w_y_gll(k), sqrt_mod(m),sqrts_div(m))
 
   ! Initialization of fields
+  !call initialisation(u,w)
+
+  ! Initialise from magnetic potential
+  !allocate(A_pot(nx,ny,m+1,m+1))
+  !call initialise_magnetic_potential(A_pot)
+  !call get_B_from_A(A_pot,u,w) ! return nodes of B (derived from A)
+
   call initialisation(u,w)
 
   !device allocation and memory copies
